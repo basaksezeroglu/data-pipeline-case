@@ -24,6 +24,5 @@ select * from dwh.v_customer_sales;
 -- healthcheck son durum
 select * from hc.v_latest order by status, pipeline;
 
--- healthcheck'in hatayi yakaladigini gostermek icin dwh'ta bir tutari boz, sonra geri al
 -- update dwh.fact_order set amount = amount + 1000 where order_id = (select max(order_id) from dwh.fact_order);
 -- update dwh.fact_order set amount = amount - 1000 where order_id = (select max(order_id) from dwh.fact_order);
