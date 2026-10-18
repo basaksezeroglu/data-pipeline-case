@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+airflow/logs/
+.env
+SUNUM_NOTLARI.md
+*.docx

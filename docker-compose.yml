@@ -1,0 +1,135 @@
+# source-db (localhost:5433) ve target-db (localhost:5434) bu dosyanin disinda,
+# ayri container olarak calisiyor. Buradaki servisler onlara host.docker.internal ile baglaniyor.
+
+services:
+
+  # kaynak ve hedef tablolari olusturur, bir kere calisip kapanir
+  db-init:
+    image: postgres:15
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./sql:/sql
+    command: >
+      bash -c "psql postgresql://postgres:postgres@host.docker.internal:5433/postgreSource -f /sql/source_tables.sql &&
+               psql postgresql://postgres:postgres@host.docker.internal:5434/iyzicoTarget -f /sql/target_tables.sql"
+
+  # ---------------- STREAMING ----------------
+
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: kafka
+    ports: ["29092:29092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"   # bilgisayarda ram az oldugu icin
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 10s
+      retries: 30
+    restart: unless-stopped
+
+  # Kafka Connect + Debezium (kaynak db'nin WAL'ini okuyup kafka'ya yaziyor)
+  connect:
+    image: quay.io/debezium/connect:2.7.3.Final
+    container_name: connect
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      kafka: { condition: service_healthy }
+    ports: ["8083:8083"]
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: connect-cluster
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+      HEAP_OPTS: "-Xms256m -Xmx512m"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors"]
+      interval: 10s
+      retries: 40
+    restart: unless-stopped
+
+  # debezium connector'unu connect'e kaydeder, bir kere calisip kapanir
+  connector-init:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      connect: { condition: service_healthy }
+    volumes:
+      - ./streaming:/streaming
+    command: >
+      -X PUT -H "Content-Type: application/json"
+      --data @/streaming/debezium_connector.json
+      http://connect:8083/connectors/source-pg-connector/config
+
+  # kafka'dan okuyup stream.* tablolarina yazan python kodu
+  kafka-consumer:
+    build: ./streaming
+    container_name: kafka-consumer
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      kafka: { condition: service_healthy }
+    environment:
+      TARGET_DSN: postgresql://postgres:postgres@host.docker.internal:5434/iyzicoTarget
+      KAFKA_BOOTSTRAP: kafka:9092
+    restart: unless-stopped
+
+  # ---------------- BATCH ----------------
+
+  # airflow'un kendi metadata db'si
+  airflow-db:
+    image: postgres:15
+    container_name: airflow-db
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      start_period: 60s
+      retries: 10
+    restart: unless-stopped
+
+  airflow:
+    image: apache/airflow:2.10.5
+    container_name: airflow
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      airflow-db: { condition: service_healthy }
+    ports: ["8080:8080"]
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: iyzico
+      AIRFLOW__WEBSERVER__WORKERS: 1
+      AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT: 300
+      # dag'larda kullanilan baglantilar (source_db, target_db)
+      AIRFLOW_CONN_SOURCE_DB: postgresql://postgres:postgres@host.docker.internal:5433/postgreSource
+      AIRFLOW_CONN_TARGET_DB: postgresql://postgres:postgres@host.docker.internal:5434/iyzicoTarget
+      # healthcheck'i terminalden calistirmak icin
+      SOURCE_DSN: postgresql://postgres:postgres@host.docker.internal:5433/postgreSource
+      TARGET_DSN: postgresql://postgres:postgres@host.docker.internal:5434/iyzicoTarget
+      CONNECT_URL: http://connect:8083
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+    command: >
+      bash -c "airflow db migrate &&
+               airflow users create --username admin --password admin --firstname admin --lastname admin --role Admin --email admin@example.com;
+               airflow scheduler & airflow webserver"
+    restart: unless-stopped
+
+volumes:
+  airflow_db_data:
