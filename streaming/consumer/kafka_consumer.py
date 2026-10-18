@@ -33,7 +33,7 @@ def save_row(cur, table, row):
     columns = COLUMNS[table]
     values = [to_timestamp(row[c]) if c in ("idate", "udate") else row[c] for c in columns]
 
-    # kayit varsa guncelle yoksa ekle
+    # upsert
     update_part = ", ".join(f"{c} = excluded.{c}" for c in columns if c != "id")
     sql = f"""
         insert into stream.{table} ({", ".join(columns)})
@@ -45,13 +45,13 @@ def save_row(cur, table, row):
 
 
 def main():
-    # db hazir olana kadar bekle
+    # db conn check
     while True:
         try:
             conn = psycopg2.connect(TARGET_DSN)
             break
         except psycopg2.OperationalError:
-            print("db bekleniyor...", flush=True)
+            print("db not ready...", flush=True)
             time.sleep(3)
 
     consumer = Consumer({
@@ -61,7 +61,7 @@ def main():
         "enable.auto.commit": False,       # offset'i db'ye yazdiktan sonra kendimiz commit ediyoruz
     })
     consumer.subscribe(TOPICS)
-    print(f"dinleniyor: {TOPICS}", flush=True)
+    print(f"listening: {TOPICS}", flush=True)
 
     while True:
         msg = consumer.poll(1.0)
