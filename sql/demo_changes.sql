@@ -1,17 +1,16 @@
 -- Kaynakta test icin degisiklik yapar. Her calistirildiginda yeni kayit olusturur.
--- DBeaver'da postgreSource baglantisinda sorgulari tek tek calistir (Ctrl+Enter).
 
--- 1) yeni musteri (isim ve email bilerek duzensiz, ods'te temizleniyor mu bakalim)
+-- 1) new customer (isim ve email bilerek duzensiz)
 insert into public.customers (name, email)
 values ('  Demo   Musteri ', 'DEMO_' || to_char(now(), 'HH24MISS') || '@Example.com')
 returning *;
 
--- 2) bu musteriye siparis (status bilerek buyuk harf)
+-- 2) bu musteriye order tanimi
 insert into public.orders (customer_id, amount, status)
 select max(id), 199.99, 'PENDING' from public.customers
 returning *;
 
--- 3) son siparisi tamamla (udate trigger ile otomatik guncellenir)
+-- 3) son siparis status change
 update public.orders set status = 'completed'
 where id = (select max(id) from public.orders)
 returning *;

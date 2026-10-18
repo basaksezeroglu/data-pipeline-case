@@ -1,4 +1,4 @@
-# iyzico Data Engineer Case
+# Data Engineer Case
 
 Kaynak PostgreSQL'deki `customers` ve `orders` tablolarını hedef PostgreSQL'e iki şekilde aktardım:
 
