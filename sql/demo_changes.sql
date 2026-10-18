@@ -1,4 +1,4 @@
--- Kaynakta test icin degisiklik yapar. Her calistirildiginda yeni kayit olusturur.
+-- test icin sorgular
 
 -- 1) new customer (isim ve email bilerek duzensiz)
 insert into public.customers (name, email)
