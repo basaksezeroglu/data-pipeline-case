@@ -1,8 +1,8 @@
 -- Hedef DB (iyzicoTarget) kontrol sorgulari
 
--- streaming: kafka'dan gelen son degisiklikler
-select * from stream.orders order by cdc_consumed_ts desc;
-select * from stream.customers order by cdc_consumed_ts desc;
+-- streaming: kafka'dan gelen son kayitlar
+select * from stream.orders order by consumed_ts desc;
+select * from stream.customers order by consumed_ts desc;
 
 -- batch: run'lar ve her run'da kac kayit cekildi
 select * from etl.run_log order by started_at desc;

@@ -17,7 +17,10 @@ create table if not exists public.orders (
     udate       timestamp     not null default now()
 );
 
+-- etl idate/udate'e gore sorguladigi icin
+create index if not exists ix_customers_idate on public.customers(idate);
 create index if not exists ix_customers_udate on public.customers(udate);
+create index if not exists ix_orders_idate    on public.orders(idate);
 create index if not exists ix_orders_udate    on public.orders(udate);
 
 -- update yapildiginda udate otomatik guncellensin (batch etl udate'e gore calisiyor)
@@ -35,10 +38,6 @@ create trigger trg_customers_udate before update on public.customers
 drop trigger if exists trg_orders_udate on public.orders;
 create trigger trg_orders_udate before update on public.orders
     for each row execute function public.fn_set_udate();
-
--- debezium delete mesajinda silinen satirin tum kolonlari gelsin diye
-alter table public.customers replica identity full;
-alter table public.orders    replica identity full;
 
 -- ornek veri (sadece tablolar bossa ekleniyor, yoksa silinen kayitlar tekrar gelir)
 insert into public.customers (id, name, email, idate, udate)

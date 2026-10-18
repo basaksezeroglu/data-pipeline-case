@@ -1,8 +1,8 @@
-# Kafka'daki Debezium mesajlarini okuyup hedef DB'deki stream tablolarina yazar.
+# Kafka'daki mesajlari okuyup hedef DB'deki stream tablolarina yazar.
 #
-# Debezium her degisiklik icin su formatta mesaj gonderiyor:
-#   {"before": {...}, "after": {...}, "op": "c", "source": {"lsn": ..., "ts_ms": ...}}
-#   op: r = ilk yukleme (snapshot), c = insert, u = update, d = delete
+# Kafka Connect JDBC connector her 5 saniyede bir kaynakta yeni eklenen/guncellenen
+# kayitlari buluyor ve her kaydi bir mesaj olarak Kafka'ya yaziyor:
+#   topic: src_orders   mesaj: {"id": 101, "customer_id": 1, "amount": 250.00, "status": "completed", ...}
 
 import json
 import os
@@ -14,7 +14,7 @@ from confluent_kafka import Consumer
 
 TARGET_DSN = os.environ["TARGET_DSN"]
 KAFKA = os.environ.get("KAFKA_BOOTSTRAP", "kafka:9092")
-TOPICS = ["cdc.public.customers", "cdc.public.orders"]
+TOPICS = ["src_customers", "src_orders"]
 
 COLUMNS = {
     "customers": ["id", "name", "email", "idate", "udate"],
@@ -22,30 +22,26 @@ COLUMNS = {
 }
 
 
-def to_timestamp(micros):
-    # debezium timestamp kolonlarini 1970'ten beri gecen mikro saniye olarak gonderiyor
-    if micros is None:
+def to_timestamp(millis):
+    # kafka connect tarih kolonlarini 1970'ten beri gecen milisaniye olarak gonderiyor
+    if millis is None:
         return None
-    return datetime(1970, 1, 1) + timedelta(microseconds=micros)
+    return datetime(1970, 1, 1) + timedelta(milliseconds=millis)
 
 
-def save_event(cur, table, event):
-    op = event["op"]
-    row = event["before"] if op == "d" else event["after"]   # delete'te after bos geliyor
+def save_row(cur, table, row):
+    columns = COLUMNS[table]
+    values = [to_timestamp(row[c]) if c in ("idate", "udate") else row[c] for c in columns]
 
-    columns = COLUMNS[table] + ["is_deleted", "cdc_op", "cdc_lsn", "cdc_source_ts"]
-    values = [to_timestamp(row[c]) if c in ("idate", "udate") else row[c] for c in COLUMNS[table]]
-    values += [op == "d", op, event["source"]["lsn"], datetime.utcfromtimestamp(event["source"]["ts_ms"] / 1000)]
-
-    # kayit varsa guncelle yoksa ekle. delete'te satiri silmiyoruz, is_deleted = true oluyor.
+    # kayit varsa guncelle yoksa ekle
     update_part = ", ".join(f"{c} = excluded.{c}" for c in columns if c != "id")
     sql = f"""
         insert into stream.{table} ({", ".join(columns)})
         values ({", ".join(["%s"] * len(columns))})
-        on conflict (id) do update set {update_part}, cdc_consumed_ts = now()
+        on conflict (id) do update set {update_part}, consumed_ts = now()
     """
     cur.execute(sql, values)
-    print(f"{table} op={op} id={row['id']}", flush=True)
+    print(f"{table} id={row['id']} yazildi", flush=True)
 
 
 def main():
@@ -74,15 +70,11 @@ def main():
         if msg.error():
             print("kafka hatasi:", msg.error(), flush=True)
             continue
-        if msg.value() is None:
-            continue
 
-        table = msg.topic().split(".")[-1]   # cdc.public.orders -> orders
-        event = json.loads(msg.value())
-        if event["op"] not in ("r", "c", "u", "d"):
-            continue
+        table = msg.topic().replace("src_", "")   # src_orders -> orders
+        row = json.loads(msg.value())
 
-        save_event(conn.cursor(), table, event)
+        save_row(conn.cursor(), table, row)
         conn.commit()
 
         # once db'ye yaziyoruz, sonra offset commit ediyoruz.

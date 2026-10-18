@@ -1,14 +1,10 @@
--- ods -> dwh (dim_customer)  -- delete + insert
--- load_from = son basarili run'in tarihi. ods'te bu tarihten beri degisen musteriler
--- dwh'tan silinip tekrar ekleniyor. silinmis (is_deleted) olanlar geri eklenmiyor.
+-- ods -> dwh (dim_customer)  -- id'ye gore sil + yukle
+-- bugun ods'e yazilan musterilerin id'leri dwh'tan silinip ods'teki guncel halleriyle tekrar ekleniyor.
 
-delete from dwh.dim_customer d
-using ods.customers o
-where d.customer_id = o.id
-  and o.etl_date >= %(load_from)s;
+delete from dwh.dim_customer
+where customer_id in (select id from ods.customers where etl_date = %(etl_date)s);
 
 insert into dwh.dim_customer (customer_id, customer_name, email, email_domain, created_at, updated_at, etl_date)
 select id, name, email, email_domain, idate, udate, %(etl_date)s
 from ods.customers
-where etl_date >= %(load_from)s
-  and is_deleted = false;
+where etl_date = %(etl_date)s;

@@ -1,0 +1,17 @@
+{
+  "connector.class": "io.confluent.connect.jdbc.JdbcSourceConnector",
+  "connection.url": "jdbc:postgresql://host.docker.internal:5433/postgreSource",
+  "connection.user": "postgres",
+  "connection.password": "postgres",
+  "table.whitelist": "customers,orders",
+  "mode": "timestamp+incrementing",
+  "timestamp.column.name": "udate",
+  "incrementing.column.name": "id",
+  "poll.interval.ms": "5000",
+  "topic.prefix": "src_",
+  "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "key.converter.schemas.enable": "false",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false",
+  "value.converter.decimal.format": "NUMERIC"
+}

@@ -58,10 +58,6 @@ create table if not exists stg.orders (
     etl_extract_ts  timestamp default now()
 );
 
--- kaynaktaki tum id'ler (silinen kayitlari bulmak icin)
-create table if not exists stg.customers_keys (id integer primary key);
-create table if not exists stg.orders_keys    (id integer primary key);
-
 -- ===================== ODS =====================
 
 create table if not exists ods.customers (
@@ -72,8 +68,7 @@ create table if not exists ods.customers (
     is_valid_email  boolean      not null,
     idate           timestamp    not null,
     udate           timestamp    not null,
-    is_deleted      boolean      not null default false,
-    etl_date        date         not null,      -- kaydin ods'te son degistigi gun
+    etl_date        date         not null,      -- kaydin ods'e en son yazildigi gun
     etl_insert_ts   timestamp    not null default now(),
     etl_update_ts   timestamp    not null default now()
 );
@@ -87,7 +82,6 @@ create table if not exists ods.orders (
     order_date      date          not null,
     idate           timestamp     not null,
     udate           timestamp     not null,
-    is_deleted      boolean       not null default false,
     etl_date        date          not null,
     etl_insert_ts   timestamp     not null default now(),
     etl_update_ts   timestamp     not null default now()
@@ -154,33 +148,25 @@ where c.customer_id <> -1
 group by c.customer_id, c.customer_name, c.email;
 
 -- ===================== STREAM =====================
--- kaynakla ayni kolonlar + debezium bilgileri
+-- kaynakla ayni kolonlar + kafka'dan okundugu zaman
 
 create table if not exists stream.customers (
-    id               integer primary key,
-    name             varchar(100),
-    email            varchar(255),
-    idate            timestamp,
-    udate            timestamp,
-    is_deleted       boolean   not null default false,
-    cdc_op           char(1),       -- r=ilk yukleme, c=insert, u=update, d=delete
-    cdc_lsn          bigint,
-    cdc_source_ts    timestamp,     -- kaynakta degisikligin oldugu zaman
-    cdc_consumed_ts  timestamp not null default now()
+    id           integer primary key,
+    name         varchar(100),
+    email        varchar(255),
+    idate        timestamp,
+    udate        timestamp,
+    consumed_ts  timestamp not null default now()
 );
 
 create table if not exists stream.orders (
-    id               integer primary key,
-    customer_id      integer,
-    amount           numeric(12,2),
-    status           varchar(20),
-    idate            timestamp,
-    udate            timestamp,
-    is_deleted       boolean   not null default false,
-    cdc_op           char(1),
-    cdc_lsn          bigint,
-    cdc_source_ts    timestamp,
-    cdc_consumed_ts  timestamp not null default now()
+    id           integer primary key,
+    customer_id  integer,
+    amount       numeric(12,2),
+    status       varchar(20),
+    idate        timestamp,
+    udate        timestamp,
+    consumed_ts  timestamp not null default now()
 );
 
 -- ===================== HEALTHCHECK =====================

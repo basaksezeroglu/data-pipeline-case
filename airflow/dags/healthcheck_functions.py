@@ -44,7 +44,7 @@ def batch_checks(source, target, results):
         watermark = query(target, f"select last_udate from etl.watermark where table_name = '{table}'")[0][0]
 
         source_rows = dict(query(source, f"select id, udate from public.{table}"))
-        ods_rows = dict(query(target, f"select id, udate from ods.{table} where is_deleted = false"))
+        ods_rows = dict(query(target, f"select id, udate from ods.{table}"))
 
         # watermark'a kadar degisen kayitlar ods'te ayni udate ile olmali
         wrong = [i for i, udate in source_rows.items()
@@ -52,18 +52,17 @@ def batch_checks(source, target, results):
         add_result(results, "batch", table, "source_vs_ods", len(wrong) == 0, 0, len(wrong),
                    f"eksik veya eski kayitlar: {sorted(wrong)[:10]}")
 
-        # watermark'tan sonra degisen / silinen kayitlar bir sonraki run'da gelecek, sadece uyari
+        # watermark'tan sonra degisen kayitlar bir sonraki run'da gelecek, sadece uyari
         waiting = [i for i, udate in source_rows.items() if udate > watermark]
-        waiting += [i for i in ods_rows if i not in source_rows]
         add_result(results, "batch", table, "waiting_next_run", len(waiting) == 0, 0, len(waiting),
                    f"sonraki run'i bekleyen kayitlar: {sorted(waiting)[:10]}", only_warning=True)
 
     # ods ve dwh ayni olmali
-    ods_count = query(target, "select count(*) from ods.customers where is_deleted = false")[0][0]
+    ods_count = query(target, "select count(*) from ods.customers")[0][0]
     dwh_count = query(target, "select count(*) from dwh.dim_customer where customer_id <> -1")[0][0]
     add_result(results, "batch", "customers", "ods_vs_dwh", ods_count == dwh_count, ods_count, dwh_count)
 
-    ods_orders = query(target, "select count(*), coalesce(sum(amount), 0) from ods.orders where is_deleted = false")[0]
+    ods_orders = query(target, "select count(*), coalesce(sum(amount), 0) from ods.orders")[0]
     dwh_orders = query(target, "select count(*), coalesce(sum(amount), 0) from dwh.fact_order")[0]
     add_result(results, "batch", "orders", "ods_vs_dwh", ods_orders == dwh_orders,
                f"{ods_orders[0]} kayit / {ods_orders[1]} tutar", f"{dwh_orders[0]} kayit / {dwh_orders[1]} tutar")
@@ -78,9 +77,11 @@ def batch_checks(source, target, results):
 # ---------------- STREAMING ----------------
 
 def compare_stream(source, target, table):
-    columns = ", ".join(TABLES[table])
+    # kafka connect tarihleri milisaniye hassasiyetinde tasiyor, karsilastirirken iki tarafi da ms'e yuvarliyoruz
+    columns = ", ".join(f"date_trunc('milliseconds', {c})" if c in ("idate", "udate") else c
+                        for c in TABLES[table])
     source_rows = set(query(source, f"select {columns} from public.{table}"))
-    stream_rows = set(query(target, f"select {columns} from stream.{table} where is_deleted = false"))
+    stream_rows = set(query(target, f"select {columns} from stream.{table}"))
     return source_rows ^ stream_rows   # sadece bir tarafta olan satirlar
 
 
@@ -95,20 +96,15 @@ def streaming_checks(source, target, results):
         add_result(results, "streaming", table, "source_vs_stream", len(diff) == 0, 0, len(diff_ids),
                    f"farkli id'ler: {diff_ids[:10]}")
 
-    # debezium connector calisiyor mu
+    # kafka connect jdbc connector calisiyor mu
     try:
-        url = os.getenv("CONNECT_URL", "http://connect:8083") + "/connectors/source-pg-connector/status"
+        url = os.getenv("CONNECT_URL", "http://connect:8083") + "/connectors/source-jdbc-connector/status"
         status = json.load(urllib.request.urlopen(url, timeout=20))
         states = [status["connector"]["state"]] + [t["state"] for t in status["tasks"]]
     except Exception as e:
         states = [f"ulasilamadi: {e}"]
     add_result(results, "streaming", None, "connector_status", all(s == "RUNNING" for s in states),
                "RUNNING", ", ".join(states))
-
-    # replication slot aktif mi (debezium kaynagi okuyor mu)
-    slot = query(source, "select active from pg_replication_slots where slot_name = 'debezium_slot'")
-    add_result(results, "streaming", None, "replication_slot", bool(slot) and slot[0][0],
-               "active", slot[0][0] if slot else "slot yok")
 
 
 # ---------------- ANA FONKSIYON ----------------

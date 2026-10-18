@@ -37,28 +37,36 @@ services:
       retries: 30
     restart: unless-stopped
 
-  # Kafka Connect + Debezium (kaynak db'nin WAL'ini okuyup kafka'ya yaziyor)
+  # Kafka Connect + JDBC Source connector
+  # her 5 saniyede bir kaynakta yeni/guncellenen kayitlari sorgulayip kafka'ya yaziyor
   connect:
-    image: quay.io/debezium/connect:2.7.3.Final
+    build: ./streaming/connect
     container_name: connect
     extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       kafka: { condition: service_healthy }
     ports: ["8083:8083"]
     environment:
-      BOOTSTRAP_SERVERS: kafka:9092
-      GROUP_ID: connect-cluster
-      CONFIG_STORAGE_TOPIC: connect_configs
-      OFFSET_STORAGE_TOPIC: connect_offsets
-      STATUS_STORAGE_TOPIC: connect_statuses
-      HEAP_OPTS: "-Xms256m -Xmx512m"
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_GROUP_ID: connect-cluster
+      CONNECT_CONFIG_STORAGE_TOPIC: jdbc_connect_configs
+      CONNECT_OFFSET_STORAGE_TOPIC: jdbc_connect_offsets
+      CONNECT_STATUS_STORAGE_TOPIC: jdbc_connect_statuses
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors"]
       interval: 10s
       retries: 40
     restart: unless-stopped
 
-  # debezium connector'unu connect'e kaydeder, bir kere calisip kapanir
+  # jdbc connector'unu connect'e kaydeder, bir kere calisip kapanir
   connector-init:
     image: curlimages/curl:8.10.1
     depends_on:
@@ -67,12 +75,12 @@ services:
       - ./streaming:/streaming
     command: >
       -X PUT -H "Content-Type: application/json"
-      --data @/streaming/debezium_connector.json
-      http://connect:8083/connectors/source-pg-connector/config
+      --data @/streaming/jdbc_connector.json
+      http://connect:8083/connectors/source-jdbc-connector/config
 
   # kafka'dan okuyup stream.* tablolarina yazan python kodu
   kafka-consumer:
-    build: ./streaming
+    build: ./streaming/consumer
     container_name: kafka-consumer
     extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:

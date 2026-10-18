@@ -35,17 +35,13 @@ def get_target_conn():
 
 
 def get_dates(context):
-    # start_run'in dondurdugu {etl_date, load_from}
+    # start_run'in dondurdugu {etl_date}
     return context["ti"].xcom_pull(task_ids="start_run")
 
 
 def start_run(**context):
     conn = get_target_conn()
     cur = conn.cursor()
-
-    # dwh'a son basarili run'dan bu yana degisen kayitlari yukleyecegiz
-    cur.execute("select coalesce(max(etl_date), '1900-01-01') from etl.run_log where status = 'success'")
-    load_from = cur.fetchone()[0]
 
     cur.execute("""
         insert into etl.run_log (run_id, etl_date) values (%s, current_date)
@@ -58,8 +54,8 @@ def start_run(**context):
     conn.commit()
     conn.close()
 
-    print(f"etl_date={etl_date}, load_from={load_from}")
-    return {"etl_date": str(etl_date), "load_from": str(load_from)}
+    print(f"etl_date={etl_date}")
+    return {"etl_date": str(etl_date)}
 
 
 def extract_to_stg(table, **context):
@@ -71,32 +67,29 @@ def extract_to_stg(table, **context):
     source_cur = source.cursor()
     target_cur = target.cursor()
 
-    # en son hangi udate'e kadar cektik
+    # watermark: en son hangi tarihe kadar veri cektik
     target_cur.execute("select last_udate from etl.watermark where table_name = %s", (table,))
-    last_udate = target_cur.fetchone()[0]
+    watermark = target_cur.fetchone()[0]
 
-    # sadece o zamandan sonra degisen kayitlar
-    source_cur.execute(f"select {columns} from public.{table} where udate > %s", (last_udate,))
+    # o tarihten sonra eklenen (idate) veya guncellenen (udate) kayitlar.
+    # >= kullaniyoruz ki tam sinirdaki kayit kacmasin; ayni kayit tekrar gelse de
+    # dwh'a id'ye gore sil-yukle yaptigimiz icin sorun olmuyor.
+    source_cur.execute(f"select {columns} from public.{table} where idate >= %s or udate >= %s",
+                       (watermark, watermark))
     rows = source_cur.fetchall()
 
-    # silinen kayitlari bulmak icin kaynaktaki butun id'ler
-    source_cur.execute(f"select id from public.{table}")
-    ids = source_cur.fetchall()
-
-    target_cur.execute(f"truncate table stg.{table}, stg.{table}_keys")
+    target_cur.execute(f"truncate table stg.{table}")
     if rows:
         execute_values(target_cur,
                        f"insert into stg.{table} ({columns}, etl_date) values %s",
                        [row + (etl_date,) for row in rows])
-    if ids:
-        execute_values(target_cur, f"insert into stg.{table}_keys (id) values %s", ids)
     target.commit()
 
     source.close()
     target.close()
 
     max_udate = max(row[-1] for row in rows) if rows else None
-    print(f"{table}: {len(rows)} degisen kayit, kaynakta {len(ids)} id var")
+    print(f"{table}: {len(rows)} yeni/guncellenen kayit stg'ye yazildi")
     return {"row_count": len(rows), "max_udate": str(max_udate) if max_udate else None}
 
 

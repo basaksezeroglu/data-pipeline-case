@@ -1,10 +1,8 @@
--- ods -> dwh (fact_order)  -- delete + insert
+-- ods -> dwh (fact_order)  -- id'ye gore sil + yukle
 -- musteri dim'de yoksa -1 (UNKNOWN) yaziliyor.
 
-delete from dwh.fact_order f
-using ods.orders o
-where f.order_id = o.id
-  and o.etl_date >= %(load_from)s;
+delete from dwh.fact_order
+where order_id in (select id from ods.orders where etl_date = %(etl_date)s);
 
 insert into dwh.fact_order (order_id, customer_id, order_date_key, amount, status, is_completed,
                             order_created_at, order_updated_at, etl_date)
@@ -19,5 +17,4 @@ select o.id,
        %(etl_date)s
 from ods.orders o
 left join dwh.dim_customer c on c.customer_id = o.customer_id
-where o.etl_date >= %(load_from)s
-  and o.is_deleted = false;
+where o.etl_date = %(etl_date)s;
