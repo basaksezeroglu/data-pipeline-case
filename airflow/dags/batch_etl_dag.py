@@ -72,8 +72,7 @@ def extract_to_stg(table, **context):
     watermark = target_cur.fetchone()[0]
 
     # o tarihten sonra eklenen (idate) veya guncellenen (udate) kayitlar.
-    # >= kullaniyoruz ki tam sinirdaki kayit kacmasin; ayni kayit tekrar gelse de
-    # dwh'a id'ye gore sil-yukle yaptigimiz icin sorun olmuyor.
+    # >= kullaniyoruz ki tam sinirdaki kayit kacmasin; ayni kayit tekrar gelse de dwh'a id'ye gore sil-yukle yaptigimiz icin sorun olmuyor.
     source_cur.execute(f"select {columns} from public.{table} where idate >= %s or udate >= %s",
                        (watermark, watermark))
     rows = source_cur.fetchall()

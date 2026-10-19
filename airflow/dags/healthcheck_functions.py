@@ -67,7 +67,7 @@ def batch_checks(source, target, results):
     add_result(results, "batch", "orders", "ods_vs_dwh", ods_orders == dwh_orders,
                f"{ods_orders[0]} kayit / {ods_orders[1]} tutar", f"{dwh_orders[0]} kayit / {dwh_orders[1]} tutar")
 
-    # son basarili run 26 saatten eski olmamali (gunluk calisiyor)
+    # son basarili run 26 saatten eski olmamali (gunluk calisiyor, sarkmalar olursa diye 2 saatlik pay verildi)
     hours = query(target, "select extract(epoch from now() - max(finished_at)) / 3600 "
                           "from etl.run_log where status = 'success'")[0][0]
     add_result(results, "batch", None, "last_run", hours is not None and hours < 26, "< 26 saat",
@@ -77,7 +77,7 @@ def batch_checks(source, target, results):
 # ---------------- STREAMING ----------------
 
 def compare_stream(source, target, table):
-    # kafka connect tarihleri milisaniye hassasiyetinde tasiyor, karsilastirirken iki tarafi da ms'e yuvarliyoruz
+    # kafka connect tarihleri milisaniye, karsilastirirken iki tarafi da ms'e yuvarliyoruz
     columns = ", ".join(f"date_trunc('milliseconds', {c})" if c in ("idate", "udate") else c
                         for c in TABLES[table])
     source_rows = set(query(source, f"select {columns} from public.{table}"))
@@ -107,7 +107,7 @@ def streaming_checks(source, target, results):
                "RUNNING", ", ".join(states))
 
 
-# ---------------- ANA FONKSIYON ----------------
+# -------------- Main Func --------------
 
 def run_healthcheck(source, target, pipelines=("batch", "streaming"), run_name=None):
     run_name = run_name or "manual_" + time.strftime("%Y%m%d_%H%M%S")
