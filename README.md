@@ -86,6 +86,9 @@ Bazı kararlar:
   yapıldığı için sonuç değişmiyor.
 - **udate için trigger:** Kaynağa update'te `udate`'i otomatik güncelleyen bir trigger ekledim. Uygulama `udate`'i
   güncellemeyi unutursa ETL o değişikliği göremezdi.
+- **Tarihler UTC:** Kaynakta `idate`/`udate` her zaman UTC yazılıyor (`now() at time zone 'utc'`). İlk halinde `now()`
+  bağlanan oturumun saat dilimine göre değer üretiyordu; DBeaver'dan (UTC+3) eklenen kayıtlar 3 saat ileri tarihli
+  yazılıyor ve Kafka Connect "gelecekteki" bu kayıtları 3 saat geç alıyordu.
 - **SCD Type 1:** Müşteri bilgisi değişince DWH'ta güncel hali tutuluyor, geçmiş tutulmuyor. Case'te geçmiş ihtiyacı yoktu.
 
 ## Streaming

@@ -31,6 +31,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"   # bilgisayarda ram az oldugu icin
+      # topic'ler volume'da tutuluyor, container yeniden olussa da kaybolmuyor
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka_data:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 9092"]
       interval: 10s
@@ -141,3 +146,4 @@ services:
 
 volumes:
   airflow_db_data:
+  kafka_data:

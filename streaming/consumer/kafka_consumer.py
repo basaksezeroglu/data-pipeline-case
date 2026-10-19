@@ -59,6 +59,7 @@ def main():
         "group.id": "stream-consumer",
         "auto.offset.reset": "earliest",   # ilk calistiginda topic'in basindan oku
         "enable.auto.commit": False,       # offset'i db'ye yazdiktan sonra kendimiz commit ediyoruz
+        "topic.metadata.refresh.interval.ms": 10000,   # topic sonradan olusursa 10 sn icinde fark et
     })
     consumer.subscribe(TOPICS)
     print(f"dinleniyor: {TOPICS}", flush=True)
